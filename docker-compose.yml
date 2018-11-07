@@ -1,0 +1,67 @@
+version: "3"
+services:
+  nginx:
+    image: nginx:latest
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    ports:
+      - "8888:80"
+  swarm_management:
+    image: portainer/portainer:latest
+    ports:
+      - "9000:9000"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+  # ===== Monitoring ======
+  influx:
+    image: influxdb
+    environment:
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_DB=cadvisor
+      - INFLUXDB_ADMIN_ENABLED=true
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=supersecretpassword
+      - INFLUXDB_USER=cadvisor_user
+      - INFLUXDB_USER_PASSWORD=cadvisor_secret
+    # volumes:
+    #   - ./influx:/var/lib/influxdb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+  grafana:
+    image: grafana/grafana
+    ports: 
+      - 3000:3000
+    volumes:
+      - ./grafana:/var/lib/grafana
+    depends_on:
+      - influx
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+  CAdvisor:
+    image: google/cadvisor:latest
+    command: --logtostderr --docker_only --storage_driver=influxdb --storage_driver_db=cadvisor --storage_driver_host=influx:8086 --storage_driver_user=cadvisor_user --storage_driver_password=cadvisor_secret
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    depends_on:
+      - influx
+    ports:
+      - "8080:8080"
+    deploy:
+      mode: global 
+  
